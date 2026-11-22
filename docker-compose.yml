@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16.4
+    container_name: solarbi-postgres
+    env_file: .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  etl:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    image: solarbi-etl:1.0
+    env_file: .env
+    environment:
+      PGHOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["etl"]
+
+  simulator:
+    build:
+      context: .
+      dockerfile: simulator/Dockerfile
+    image: solarbi-simulator:1.0
+    env_file: .env
+    environment:
+      PGHOST: host.docker.internal
+      LOOP_S: "0"
+    profiles: ["sim"]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+    profiles: ["grafana"]
+
+volumes:
+  pgdata:

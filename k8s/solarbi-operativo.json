@@ -1,0 +1,462 @@
+{
+  "uid": "solarbi-operativo",
+  "title": "SolarBI - Monitoreo operativo",
+  "tags": [
+    "solarbi",
+    "operativo"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "inversor",
+        "label": "Inversor",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "solarbi-pg"
+        },
+        "query": "SELECT nombre AS __text, inversor_key AS __value FROM gold.dim_inversor ORDER BY 1",
+        "definition": "SELECT nombre AS __text, inversor_key AS __value FROM gold.dim_inversor ORDER BY 1",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "SoC de bateria (ultimo)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "solarbi-pg"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 40
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "textMode": "value_and_name",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.battsoc::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.battsoc IS NOT NULL ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Potencia solar actual",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "solarbi-pg"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "textMode": "value_and_name",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.pv1power_w::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.pv1power_w IS NOT NULL ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Potencia de la red (linea) actual",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "solarbi-pg"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "textMode": "value_and_name",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.linepowerw_a::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.linepowerw_a IS NOT NULL ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Minutos desde la ultima lectura",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "solarbi-pg"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 15
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "textMode": "value_and_name",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT now() AS time, (EXTRACT(EPOCH FROM (now() - MAX(fecha_hora))) / 60)::float AS value FROM gold.fact_telemetria WHERE inversor_key IN ($inversor)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Potencia solar (W)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "solarbi-pg"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.pv1power_w::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.pv1power_w IS NOT NULL ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "SoC de bateria (%) - umbral de alerta 20 %",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "solarbi-pg"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "auto",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 40
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.battsoc::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.battsoc IS NOT NULL ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Balance: carga vs red (W)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "solarbi-pg"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT t.fecha_hora AS time, i.nombre || ' - carga' AS metric, t.outsumw::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.outsumw IS NOT NULL ORDER BY 1"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT t.fecha_hora AS time, i.nombre || ' - red' AS metric, t.linepowerw_a::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.linepowerw_a IS NOT NULL ORDER BY 1"
+        }
+      ]
+    }
+  ]
+}

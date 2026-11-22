@@ -1,0 +1,746 @@
+# Grafana: provisioning de fuente de datos, tablero y alertas + Deployment + Service.
+# Credenciales: PG_USER / PG_PASSWORD vienen del Secret solarbi-secrets (nada en el repo).
+# Opcional: agregar GF_ADMIN_USER y GF_ADMIN_PASSWORD al Secret para no usar admin/admin.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  namespace: solarbi
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: SolarBI PostgreSQL
+        uid: solarbi-pg
+        type: grafana-postgresql-datasource
+        access: proxy
+        url: ${PGHOST}:${PGPORT}
+        user: ${PG_USER}
+        isDefault: true
+        editable: false
+        jsonData:
+          database: ${PGDATABASE}
+          sslmode: disable
+          timescaledb: false
+        secureJsonData:
+          password: ${PG_PASSWORD}
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: solarbi
+        orgId: 1
+        folder: SolarBI
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        updateIntervalSeconds: 30
+        options:
+          path: /etc/grafana/dashboards
+  alerts.yaml: |
+    apiVersion: 1
+    groups:
+      - orgId: 1
+        name: solarbi-operativo
+        folder: SolarBI
+        interval: 1m
+        rules:
+          - uid: solarbi-soc-bajo
+            title: SoC de bateria bajo
+            condition: C
+            for: 2m
+            noDataState: OK
+            execErrState: Error
+            annotations:
+              summary: "SoC de la bateria por debajo de 20 %: revisar carga y consumo"
+            labels:
+              severity: warning
+              kpi: soc
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 900
+                  to: 0
+                datasourceUid: solarbi-pg
+                model:
+                  refId: A
+                  datasource:
+                    type: grafana-postgresql-datasource
+                    uid: solarbi-pg
+                  editorMode: code
+                  format: time_series
+                  rawQuery: true
+                  rawSql: "SELECT t.fecha_hora AS time, i.nombre AS metric, t.battsoc::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE t.fecha_hora >= now() - interval '15 minutes' AND t.battsoc IS NOT NULL ORDER BY 1"
+              - refId: B
+                datasourceUid: __expr__
+                relativeTimeRange:
+                  from: 900
+                  to: 0
+                model:
+                  refId: B
+                  type: reduce
+                  datasource:
+                    type: __expr__
+                    uid: __expr__
+                  expression: A
+                  reducer: last
+                  settings:
+                    mode: dropNN
+              - refId: C
+                datasourceUid: __expr__
+                relativeTimeRange:
+                  from: 900
+                  to: 0
+                model:
+                  refId: C
+                  type: threshold
+                  datasource:
+                    type: __expr__
+                    uid: __expr__
+                  expression: B
+                  conditions:
+                    - evaluator:
+                        type: lt
+                        params:
+                          - 20
+          - uid: solarbi-sin-datos
+            title: Sin datos nuevos de telemetria
+            condition: C
+            for: 1m
+            noDataState: Alerting
+            execErrState: Error
+            annotations:
+              summary: "No llegan lecturas hace mas de 900 s (UMBRAL_HUECO_S): revisar simulador o captura"
+            labels:
+              severity: critical
+              kpi: frescura
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 900
+                  to: 0
+                datasourceUid: solarbi-pg
+                model:
+                  refId: A
+                  datasource:
+                    type: grafana-postgresql-datasource
+                    uid: solarbi-pg
+                  editorMode: code
+                  format: time_series
+                  rawQuery: true
+                  rawSql: "SELECT now() AS time, (EXTRACT(EPOCH FROM (now() - MAX(fecha_hora))))::float AS value FROM gold.fact_telemetria"
+              - refId: B
+                datasourceUid: __expr__
+                relativeTimeRange:
+                  from: 900
+                  to: 0
+                model:
+                  refId: B
+                  type: reduce
+                  datasource:
+                    type: __expr__
+                    uid: __expr__
+                  expression: A
+                  reducer: last
+                  settings:
+                    mode: dropNN
+              - refId: C
+                datasourceUid: __expr__
+                relativeTimeRange:
+                  from: 900
+                  to: 0
+                model:
+                  refId: C
+                  type: threshold
+                  datasource:
+                    type: __expr__
+                    uid: __expr__
+                  expression: B
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 900
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: solarbi
+data:
+  solarbi-operativo.json: |
+    {
+      "uid": "solarbi-operativo",
+      "title": "SolarBI - Monitoreo operativo",
+      "tags": [
+        "solarbi",
+        "operativo"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": false,
+      "refresh": "30s",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "inversor",
+            "label": "Inversor",
+            "type": "query",
+            "datasource": {
+              "type": "grafana-postgresql-datasource",
+              "uid": "solarbi-pg"
+            },
+            "query": "SELECT nombre AS __text, inversor_key AS __value FROM gold.dim_inversor ORDER BY 1",
+            "definition": "SELECT nombre AS __text, inversor_key AS __value FROM gold.dim_inversor ORDER BY 1",
+            "refresh": 1,
+            "multi": true,
+            "includeAll": true,
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "SoC de bateria (ultimo)",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 20
+                  },
+                  {
+                    "color": "green",
+                    "value": 40
+                  }
+                ]
+              },
+              "min": 0,
+              "max": 100
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "textMode": "value_and_name",
+            "graphMode": "none"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "solarbi-pg"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.battsoc::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.battsoc IS NOT NULL ORDER BY 1"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Potencia solar actual",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "watt",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "textMode": "value_and_name",
+            "graphMode": "none"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "solarbi-pg"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.pv1power_w::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.pv1power_w IS NOT NULL ORDER BY 1"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Potencia de la red (linea) actual",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "watt",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "textMode": "value_and_name",
+            "graphMode": "none"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "solarbi-pg"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.linepowerw_a::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.linepowerw_a IS NOT NULL ORDER BY 1"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Minutos desde la ultima lectura",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 18,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "m",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 5
+                  },
+                  {
+                    "color": "red",
+                    "value": 15
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "textMode": "value_and_name",
+            "graphMode": "none"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "solarbi-pg"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT now() AS time, (EXTRACT(EPOCH FROM (now() - MAX(fecha_hora))) / 60)::float AS value FROM gold.fact_telemetria WHERE inversor_key IN ($inversor)"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Potencia solar (W)",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "watt",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "spanNulls": false,
+                "showPoints": "auto"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "solarbi-pg"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.pv1power_w::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.pv1power_w IS NOT NULL ORDER BY 1"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "SoC de bateria (%) - umbral de alerta 20 %",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "spanNulls": false,
+                "showPoints": "auto",
+                "thresholdsStyle": {
+                  "mode": "line"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 20
+                  },
+                  {
+                    "color": "green",
+                    "value": 40
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "solarbi-pg"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT t.fecha_hora AS time, i.nombre AS metric, t.battsoc::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.battsoc IS NOT NULL ORDER BY 1"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Balance: carga vs red (W)",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "solarbi-pg"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 13
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "watt",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "spanNulls": false,
+                "showPoints": "auto"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "solarbi-pg"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT t.fecha_hora AS time, i.nombre || ' - carga' AS metric, t.outsumw::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.outsumw IS NOT NULL ORDER BY 1"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "solarbi-pg"
+              },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT t.fecha_hora AS time, i.nombre || ' - red' AS metric, t.linepowerw_a::float AS value FROM gold.fact_telemetria t JOIN gold.dim_inversor i USING (inversor_key) WHERE $__timeFilter(t.fecha_hora) AND t.inversor_key IN ($inversor) AND t.linepowerw_a IS NOT NULL ORDER BY 1"
+            }
+          ]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: solarbi
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.2.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: solarbi-config
+          env:
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: solarbi-secrets
+                  key: POSTGRES_USER
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: solarbi-secrets
+                  key: POSTGRES_PASSWORD
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: solarbi-secrets
+                  key: GF_ADMIN_USER
+                  optional: true
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: solarbi-secrets
+                  key: GRAFANA_ADMIN_PASSWORD
+                  optional: true
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+            - name: GF_ANALYTICS_REPORTING_ENABLED
+              value: "false"
+            - name: GF_ANALYTICS_CHECK_FOR_UPDATES
+              value: "false"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "192Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources/datasource.yaml
+              subPath: datasource.yaml
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/provider.yaml
+              subPath: provider.yaml
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/alerting/alerts.yaml
+              subPath: alerts.yaml
+            - name: dashboards
+              mountPath: /etc/grafana/dashboards
+      volumes:
+        - name: provisioning
+          configMap:
+            name: grafana-provisioning
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: solarbi
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30300
