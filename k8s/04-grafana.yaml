@@ -650,8 +650,7 @@ spec:
     spec:
       containers:
         - name: grafana
-          image: grafana/grafana:11.2.0
-          imagePullPolicy: IfNotPresent
+          image: grafana/grafana:11.4.0
           ports:
             - name: http
               containerPort: 3000
@@ -679,7 +678,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: solarbi-secrets
-                  key: GRAFANA_ADMIN_PASSWORD
+                  key: GF_ADMIN_PASSWORD
                   optional: true
             - name: GF_USERS_ALLOW_SIGN_UP
               value: "false"
@@ -687,29 +686,30 @@ spec:
               value: "false"
             - name: GF_ANALYTICS_CHECK_FOR_UPDATES
               value: "false"
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /api/health
               port: 3000
-            initialDelaySeconds: 15
             periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /api/health
               port: 3000
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 6
+            periodSeconds: 15
+            failureThreshold: 5
           resources:
             requests:
               cpu: "100m"
               memory: "192Mi"
             limits:
               cpu: "500m"
-              memory: "512Mi"
+              memory: "768Mi"
           volumeMounts:
             - name: provisioning
               mountPath: /etc/grafana/provisioning/datasources/datasource.yaml
@@ -722,6 +722,8 @@ spec:
               subPath: alerts.yaml
             - name: dashboards
               mountPath: /etc/grafana/dashboards
+            - name: data
+              mountPath: /var/lib/grafana
       volumes:
         - name: provisioning
           configMap:
@@ -729,6 +731,8 @@ spec:
         - name: dashboards
           configMap:
             name: grafana-dashboards
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
