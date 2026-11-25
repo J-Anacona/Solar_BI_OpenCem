@@ -268,6 +268,3 @@ Los datos provienen de **OpenCEM v1.0.0** y se publican bajo licencia **Creative
 
 Artículo de los autores: arXiv:2604.05429. Repositorio complementario: <https://github.com/OpenCEM-platform/opencem-dataset>.
 
-Los datos se transformaron en este proyecto (limpieza, agregación a bloques de 5 minutos y modelado dimensional). Esos cambios son responsabilidad de este equipo y no de los autores de OpenCEM.
-
-El código de este repositorio es de uso académico para el Taller 6.
